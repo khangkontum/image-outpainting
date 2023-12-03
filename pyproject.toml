@@ -6,15 +6,16 @@ authors = ["khangkontum <khangkontum@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "3.10.11"
+python = "3.11.5"
 matplotlib = "^3.8.2"
-torch = "2.0.1"
+torch = ">=2.0.0, !=2.0.1"
+torchvision = "0.16.0"
 opencv-python = "^4.8.1.78"
 scipy = "^1.11.4"
 scikit-image = "^0.22.0"
-torchvision = "0.15.2"
 html4vision = "^0.4.3"
 tqdm = "^4.66.1"
+torchmetrics = {extras = ["image"], version = "^1.2.1"}
 
 
 [build-system]
