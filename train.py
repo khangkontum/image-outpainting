@@ -13,11 +13,12 @@ if __name__ == '__main__':
     print("Torchvision version: ", torchvision.__version__)
 
     # Define paths
-    model_save_path = './ckpts/'
-    html_save_path = 'htmls'
-    train_dir = './data/scenary_train_folder'
-    val_dir = './data/scenary_val_folder'
-    test_dir = './data/scenary_test_folder'
+    model_save_path = 'ckpts-scenary-adv'
+    html_save_path = 'htmls-scenary-adv'
+
+    train_dir = './data/scenary_train_folder/'
+    val_dir = './data/scenary_val_folder/'
+    test_dir = './data/scenary_test_folder/'
 
     # Define datasets & transforms
     my_tf = transforms.Compose([
@@ -58,12 +59,13 @@ if __name__ == '__main__':
     # Start training
     data_loaders = {'train': train_loader, 'val': val_loader, 'test': test_loader} # NOTE: test is evidently not used by the train method
     n_epochs = 200
-    adv_weight = [0.001, 0.005, 0.015, 0.040] # corresponds to epochs 1-10, 10-30, 30-60, 60-onwards
+    # adv_weight = [0.001, 0.005, 0.015, 0.040] # corresponds to epochs 1-10, 10-30, 30-60, 60-onwards
+    adv_weight = [0.0, 0.0, 0.0, 0.0]
     hist_loss = train_CE(G_net, D_net, device, criterion_pxl, criterion_D, optimizer_G, optimizer_D,
                          data_loaders, model_save_path, html_save_path, n_epochs=n_epochs, outpaint=True, adv_weight=adv_weight)
 
     # Save loss history and final generator
-    pickle.dump(hist_loss, open('hist_loss.p', 'wb'))
+    pickle.dump(hist_loss, open('hist_loss_adv.p', 'wb'))
     torch.save(G_net.state_dict(), 'generator_final.pt')
 
     # Next steps: see forward.py
