@@ -50,7 +50,7 @@ if __name__ == '__main__':
 
     # Define losses
     criterion_pxl = nn.L1Loss()
-    criterion_D = nn.MSELoss()
+    criterion_D = nn.BCELoss()
     optimizer_G = optim.Adam(G_net.parameters(), lr=3e-4, betas=(0.5, 0.999))
     optimizer_D = optim.Adam(D_net.parameters(), lr=3e-4, betas=(0.5, 0.999))
     criterion_pxl.to(device)

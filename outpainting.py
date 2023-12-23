@@ -29,6 +29,8 @@ from torchvision import datasets, transforms, models, utils
 from torchvision.utils import save_image
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
+from layers import Flatten, Concatenate
+from utils import gen_local_area, crop
 
 input_size = 128
 output_size = 192
@@ -36,6 +38,8 @@ expand_size = (output_size - input_size) // 2
 patch_w = output_size // 8
 patch_h = output_size // 8
 patch = (1, patch_h, patch_w)
+local_w = output_size // 2
+local_h = output_size // 2
 
 class CEGenerator(nn.Module):
     def __init__(self, channels=3, extra_upsample=False):
@@ -116,7 +120,96 @@ class CEDiscriminator(nn.Module):
     def forward(self, img):
         return self.model(img)
 
+class CEGlobalDiscriminator(nn.Module):
+    def __init__(self, input_shape, channels=3):
+        super(CEGlobalDiscriminator, self).__init__()
+        self.input_shape = input_shape
+        self.output_shape = (1024,)
+        self.img_c = input_shape[0]
+        self.img_h = input_shape[1]
+        self.img_w = input_shape[2]
 
+        def discriminator_block(in_filters, out_filters, stride, normalize):
+            """Returns layers of each discriminator block"""
+            layers = [nn.Conv2d(in_filters, out_filters, 3, stride, 1)]
+            if normalize:
+                layers.append(nn.InstanceNorm2d(out_filters))
+            layers.append(nn.LeakyReLU(0.2, inplace=True))
+            return layers
+
+        layers = []
+        in_filters = channels
+        for out_filters, stride, normalize in [(64, 2, False), (128, 2, True), (256, 2, True), (512, 2, True), (512, 2, True)]:
+            layers.extend(discriminator_block(in_filters, out_filters, stride, normalize))
+            in_filters = out_filters
+
+        in_features = 512 * (self.img_h//32) * (self.img_w//32)
+        out_features = 1024
+        layers.append(Flatten())
+        layers.append(nn.Linear(in_features, out_features))
+        #layers.append(nn.Conv2d(out_filters, 1, 3, 1, 1))
+
+        self.model = nn.Sequential(*layers)
+
+    def forward(self, img):
+        return self.model(img)
+
+class CELocalDiscriminator(nn.Module):
+    def __init__(self, input_shape, channels=3):
+        super(CEGlobalDiscriminator, self).__init__()
+        self.input_shape = input_shape
+        self.output_shape = (1024,)
+        self.img_c = input_shape[0]
+        self.img_h = input_shape[1]
+        self.img_w = input_shape[2]
+
+        def discriminator_block(in_filters, out_filters, stride, normalize):
+            """Returns layers of each discriminator block"""
+            layers = [nn.Conv2d(in_filters, out_filters, 3, stride, 1)]
+            if normalize:
+                layers.append(nn.InstanceNorm2d(out_filters))
+            layers.append(nn.LeakyReLU(0.2, inplace=True))
+            return layers
+
+        layers = []
+        in_filters = channels
+        for out_filters, stride, normalize in [(64, 2, False), (128, 2, True), (256, 2, True), (512, 2, True)]:
+            layers.extend(discriminator_block(in_filters, out_filters, stride, normalize))
+            in_filters = out_filters
+
+        in_features = 512 * (self.img_h//16) * (self.img_w//16)
+        out_features = 1024
+        layers.append(Flatten())
+        layers.append(nn.Linear(in_features, out_features))
+        #layers.append(nn.Conv2d(out_filters, 1, 3, 1, 1))
+
+        self.model = nn.Sequential(*layers)
+
+    def forward(self, img):
+        return self.model(img)
+    
+class CEContextDiscriminator(nn.Module):
+    def __init__(self, local_input_shape, global_input_shape):
+        super(CEContextDiscriminator, self).__init__()
+        self.input_shape = [local_input_shape, global_input_shape]
+        self.output_shape = (1,)
+        self.model_ld = CELocalDiscriminator(local_input_shape)
+        self.model_gd = CEGlobalDiscriminator(global_input_shape)
+        # input_shape: [(None, 1024), (None, 1024)]
+        in_features = self.model_ld.output_shape[-1] + self.model_gd.output_shape[-1]
+        self.concat1 = Concatenate(dim=-1)
+        # input_shape: (None, 2048)
+        self.linear1 = nn.Linear(in_features, 1)
+        self.act1 = nn.Sigmoid()
+        # output_shape: (None, 1)
+
+    def forward(self, x):
+        x_ld, x_gd = x
+        x_ld = self.model_ld(x_ld)
+        x_gd = self.model_gd(x_gd)
+        out = self.act1(self.linear1(self.concat1([x_ld, x_gd])))
+        return out
+    
 def construct_masked(input_img):
     resized = skimage.transform.resize(input_img, (input_size, input_size), anti_aliasing=True)
     result = np.ones((output_size, output_size))
@@ -276,7 +369,7 @@ class CEImageDataset(Dataset):
             masked_img[:, :, :i] = 1
             masked_img[:, :, -i:] = 1
 
-        return masked_img, masked_part
+        return masked_img, masked_part        
 
     def __getitem__(self, index):
 
@@ -369,7 +462,7 @@ def get_adv_weight(adv_weight, epoch):
 
 
 def train_CE(G_net, D_net, device, criterion_pxl, criterion_D, optimizer_G, optimizer_D,
-             data_loaders, model_save_path, html_save_path, n_epochs=200, start_epoch=0, outpaint=True, adv_weight=0.001):
+             data_loaders, model_save_path, html_save_path, n_epochs=200, start_epoch=0, outpaint=True, adv_weight=0.001, betas=0.9):
     '''
     Based on Context Encoder implementation in PyTorch.
     '''
@@ -395,11 +488,18 @@ def train_CE(G_net, D_net, device, criterion_pxl, criterion_D, optimizer_G, opti
                 torch.set_grad_enabled(phase == 'train')
 
                 # Adversarial ground truths
-                valid = Variable(Tensor(imgs.shape[0], *patch).fill_(1.0), requires_grad=False).to(device)
-                fake = Variable(Tensor(imgs.shape[0], *patch).fill_(0.0), requires_grad=False).to(device)
+                # valid = Variable(Tensor(imgs.shape[0], *patch).fill_(1.0), requires_grad=False).to(device)
+                #Vfake = Variable(Tensor(imgs.shape[0], *patch).fill_(0.0), requires_grad=False).to(device)
+
+                # Improved adversarial ground truths
+                valid = torch.ones((len(imgs), 1)).to(device)
+                fake = torch.zeros((len(imgs), 1)).to(device)
+
                 # Configure input
                 imgs = Variable(imgs.type(Tensor)).to(device)
                 masked_imgs = Variable(masked_imgs.type(Tensor)).to(device)
+                local_hole_area = gen_local_area((local_w, local_h), (imgs.shape[3], imgs.shape[2]))
+
                 if not(outpaint):
                     masked_parts = Variable(masked_parts.type(Tensor)).to(device)
 
@@ -410,12 +510,13 @@ def train_CE(G_net, D_net, device, criterion_pxl, criterion_D, optimizer_G, opti
                     optimizer_G.zero_grad()
                 # Generate a batch of images
                 outputs = G_net(masked_imgs)
+                local_outputs = crop(outputs, local_hole_area)
                 # Adversarial and pixelwise loss
                 if not(outpaint):
                     loss_pxl = criterion_pxl(outputs, masked_parts) # inpaint: compare center part only
                 else:
                     loss_pxl = criterion_pxl(outputs, imgs) # outpaint: compare to full ground truth
-                loss_adv = criterion_D(D_net(outputs), valid)
+                loss_adv = criterion_D(D_net((local_outputs, outputs)), valid)
                 # Total loss
                 cur_adv_weight = get_adv_weight(adv_weight, epoch)
                 loss_G = (1 - cur_adv_weight) * loss_pxl + cur_adv_weight * loss_adv
@@ -432,8 +533,9 @@ def train_CE(G_net, D_net, device, criterion_pxl, criterion_D, optimizer_G, opti
                 if not(outpaint):
                     real_loss = criterion_D(D_net(masked_parts), valid) # inpaint: check center part only
                 else:
-                    real_loss = criterion_D(D_net(imgs), valid) # outpaint: check full ground truth
-                fake_loss = criterion_D(D_net(outputs.detach()), fake)
+                    local_imgs = crop(imgs, local_hole_area)
+                    real_loss = criterion_D(D_net((local_imgs, imgs)), valid) # outpaint: check full ground truth
+                fake_loss = criterion_D(D_net((local_outputs.detach(), outputs.detach())), fake)
                 loss_D = 0.5 * (real_loss + fake_loss)
                 if phase == 'train':
                     loss_D.backward()
