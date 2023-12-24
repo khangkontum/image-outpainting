@@ -16,9 +16,9 @@ if __name__ == '__main__':
     model_save_path = 'ckpts-scenary-adv'
     html_save_path = 'htmls-scenary-adv'
 
-    train_dir = './data/scenary_train_folder/'
-    val_dir = './data/scenary_val_folder/'
-    test_dir = './data/scenary_test_folder/'
+    train_dir = '../scenary_train_folder/'
+    val_dir = '../scenary_val_folder/'
+    test_dir = '../scenary_test_folder/'
 
     # Define datasets & transforms
     my_tf = transforms.Compose([
@@ -39,7 +39,9 @@ if __name__ == '__main__':
     device = torch.device('cuda:0')
     # device = torch.device('cpu')
     G_net = CEGenerator(extra_upsample=True)
-    D_net = CEDiscriminator()
+    D_net = CEContextDiscriminator(
+      local_input_shape=(3, 96, 96),
+      global_input_shape=(3, 192, 192))
     G_net.apply(weights_init_normal)
     D_net.apply(weights_init_normal)
     # G_net = nn.DataParallel(G_net)

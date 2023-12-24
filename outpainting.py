@@ -147,6 +147,7 @@ class CEGlobalDiscriminator(nn.Module):
         out_features = 1024
         layers.append(Flatten())
         layers.append(nn.Linear(in_features, out_features))
+        layers.append(nn.LeakyReLU(0.2, inplace=True))
         #layers.append(nn.Conv2d(out_filters, 1, 3, 1, 1))
 
         self.model = nn.Sequential(*layers)
@@ -156,7 +157,7 @@ class CEGlobalDiscriminator(nn.Module):
 
 class CELocalDiscriminator(nn.Module):
     def __init__(self, input_shape, channels=3):
-        super(CEGlobalDiscriminator, self).__init__()
+        super(CELocalDiscriminator, self).__init__()
         self.input_shape = input_shape
         self.output_shape = (1024,)
         self.img_c = input_shape[0]
@@ -181,6 +182,7 @@ class CELocalDiscriminator(nn.Module):
         out_features = 1024
         layers.append(Flatten())
         layers.append(nn.Linear(in_features, out_features))
+        layers.append(nn.LeakyReLU(0.2, inplace=True))
         #layers.append(nn.Conv2d(out_filters, 1, 3, 1, 1))
 
         self.model = nn.Sequential(*layers)
@@ -572,5 +574,3 @@ def train_CE(G_net, D_net, device, criterion_pxl, criterion_D, optimizer_G, opti
 
     print('Done!')
     return hist_loss
-
-
