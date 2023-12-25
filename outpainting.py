@@ -134,7 +134,7 @@ class CEGlobalDiscriminator(nn.Module):
             layers = [nn.Conv2d(in_filters, out_filters, 3, stride, 1)]
             if normalize:
                 layers.append(nn.InstanceNorm2d(out_filters))
-            layers.append(nn.LeakyReLU(0.2, inplace=True))
+            layers.append(nn.ReLU())
             return layers
 
         layers = []
@@ -147,7 +147,8 @@ class CEGlobalDiscriminator(nn.Module):
         out_features = 1024
         layers.append(Flatten())
         layers.append(nn.Linear(in_features, out_features))
-        layers.append(nn.LeakyReLU(0.2, inplace=True))
+        layers.append(nn.ReLU())
+        #layers.append(nn.LeakyReLU(0.2, inplace=True))
         #layers.append(nn.Conv2d(out_filters, 1, 3, 1, 1))
 
         self.model = nn.Sequential(*layers)
@@ -169,7 +170,8 @@ class CELocalDiscriminator(nn.Module):
             layers = [nn.Conv2d(in_filters, out_filters, 3, stride, 1)]
             if normalize:
                 layers.append(nn.InstanceNorm2d(out_filters))
-            layers.append(nn.LeakyReLU(0.2, inplace=True))
+            #layers.append(nn.LeakyReLU(0.2, inplace=True))
+            layers.append(nn.ReLU())
             return layers
 
         layers = []
@@ -182,7 +184,8 @@ class CELocalDiscriminator(nn.Module):
         out_features = 1024
         layers.append(Flatten())
         layers.append(nn.Linear(in_features, out_features))
-        layers.append(nn.LeakyReLU(0.2, inplace=True))
+        layers.append(nn.ReLU())
+        #layers.append(nn.LeakyReLU(0.2, inplace=True))
         #layers.append(nn.Conv2d(out_filters, 1, 3, 1, 1))
 
         self.model = nn.Sequential(*layers)
